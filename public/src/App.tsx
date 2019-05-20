@@ -1,93 +1,19 @@
-import React, { Component } from 'react';
-import logo from './logo.svg';
-import './App.css';
-import { StateChart } from '@statecharts/xstate-viz';
-import { Machine, StateNode, MachineOptions, assign } from 'xstate';
-import styled from 'styled-components';
+import React, { Component } from "react";
+import logo from "./logo.svg";
+import "./App.css";
+import { StateChart } from "@statecharts/xstate-viz";
+import { Machine, StateNode, MachineOptions, assign } from "xstate";
+import styled from "styled-components";
 
-const lightMachineSrc = `
-// Available variables:
-// Machine (machine factory function)
-// assign (action)
-// XState (all XState exports)
-
-const fetchMachine = Machine({
-  id: 'fetch',
-  context: { attempts: 0 },
-  initial: 'idle',
-  states: {
-    idle: {
-      on: { FETCH: 'pending'}
-    },
-    pending: {
-      onEntry: assign({
-        attempts: ctx => ctx.attempts + 1
-      }),
-      after: {
-        TIMEOUT: 'rejected'
-      },
-      on: {
-        RESOLVE: 'fulfilled',
-        REJECT: 'rejected'
-      }
-    },
-    fulfilled: {
-      initial: 'first',
-      states: {
-        first: {
-          on: {
-            NEXT: 'second'
-          }
-        },
-        second: {
-          on: {
-            NEXT: 'third'
-          }
-        },
-        third: {
-          type: 'final'
-        }
-      }
-    },
-    rejected: {
-      initial: 'can retry',
-      states: {
-        'can retry': {
-          on: {
-            '': {
-              target: 'failure',
-              cond: 'maxAttempts'
-            }
-          }
-        },
-        failure: {
-          on: {
-            RETRY: undefined,
-          },
-          type: 'final'
-        }
-      },
-      on: {
-        RETRY: 'pending'
-      }
-    }
-  }
-}, {
-  guards: {
-    maxAttempts: ctx =>  ctx.attempts >= 5
-  },
-  delays: {
-    TIMEOUT: 2000
-  }
-});
-`;
+import navMachine from "../../../../scoot/src/state/Navigation.machine";
+import { isMajorContextChange } from "../../../../scoot/src/state/Navigation.machine.helpers";
 
 const StyledApp = styled.main`
   height: 100%;
   display: grid;
   grid-template-areas:
-    'header'
-    'content';
+    "header"
+    "content";
   grid-template-rows: 3rem auto;
   grid-template-columns: 100%;
 `;
@@ -152,12 +78,114 @@ class Header extends Component {
   }
 }
 
+const defaults = {
+  isAuthenticated: true,
+  isVehicleWithinRange: true,
+  vehicleRequiresLocking: true,
+  shouldShowOrientation: true
+};
+
+const vehicle = {
+  ignitionCode: 3
+};
+
+const ride = {
+  id: 1
+};
+
+const reservation = {
+  id: 1
+};
+
+const contextSelected = {
+  ...defaults,
+  selectedVehicle: vehicle
+};
+
+const vehicleAndRes = {
+  ...defaults,
+  heartbeatVehicle: vehicle,
+  reservation
+};
+const vehicleAndRide = {
+  ...defaults,
+  ride,
+  heartbeatVehicle: vehicle
+};
+const logTag = "ScootNavViz";
+
 class App extends Component {
+  statePrevious = null;
+  machine: any;
+
+  constructor(props: any) {
+    super(props);
+
+    this.machine = navMachine;
+    const initialContext = vehicleAndRide;
+
+    this.state = {
+      currentState: this.machine.withContext(initialContext).initialState,
+      context: initialContext
+    };
+  }
+
+  onContextChange = (context: any) => {
+    console.log(`${logTag} context changed`, context);
+    //@ts-ignore
+    const prevContext = this.state.context;
+
+    this.setState({ context }, () => {
+      //@ts-ignore
+      if (isMajorContextChange(prevContext, this.state.context)) {
+        //@ts-ignore
+        console.log(`${logTag} is Major context change`, this.state.context);
+        this.transition("HEARTBEAT_CHANGED");
+      }
+    });
+  };
+
+  getNextState = (event: any) => {
+    const nextEvent = this.machine.transition(
+      //@ts-ignore
+      this.state.currentState,
+      event,
+      //@ts-ignore
+      this.state.context
+    );
+    console.log(`${logTag} - next event == `, nextEvent);
+    return nextEvent;
+  };
+
+  transition = (event: any) => {
+    const nextState = this.machine.transition(
+      //@ts-ignore
+      this.state.currentState,
+      event,
+      //@ts-ignore
+      this.state.context
+    );
+    console.log(
+      `${logTag} - transition() event ==  ${event} nextEVent == ${JSON.stringify(
+        nextState
+      )}`
+    );
+
+    if (nextState === this.statePrevious) {
+      console.log(`${logTag} - no state change`);
+      return;
+    }
+    this.statePrevious = nextState;
+
+    // currentState = stateNext;
+    this.setState({ currentState: nextState });
+  };
+
   render() {
     return (
       <StyledApp>
         <Header />
-        <StateChart machine={lightMachineSrc} />
+        <StateChart machine={navMachine} />
       </StyledApp>
     );
   }
